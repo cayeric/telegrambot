@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# This program is dedicated to the public domain under the CC0 license.
-#
-# THIS EXAMPLE HAS BEEN UPDATED TO WORK WITH THE BETA VERSION 12 OF PYTHON-TELEGRAM-BOT.
-# If you're still using version 11.1.0, please see the examples at
-# https://github.com/python-telegram-bot/python-telegram-bot/tree/v11.1.0/examples
-
-"""
-Simple Bot to reply to Telegram messages.
-First, a few handler functions are defined. Then, those functions are passed to
-the Dispatcher and registered at their respective places.
-Then, the bot is started and runs until we press Ctrl-C on the command line.
-Usage:
-Basic Echobot example, repeats messages.
-Press Ctrl-C on the command line or send a signal to the process to stop the
-bot.
-"""
 
 import logging
 import sys
@@ -34,7 +18,6 @@ if len(sys.argv) != 3 and len(sys.argv) != 2:
     print("Usage: receive_telegram.py BOT_ID [HOOK_PATH]")
     print("  if no HOOK_PATH available, incoming mesage gets dispatched to stdout unencoded")
     print("   otherwise the hook gets calle with the base64-encoded message text")
-    print("  bot_id might be: 816337894:AAF5FaxvPAfXt_xz2s6c0lTGaJVBt9Am4gI")
     sys.exit(1)
 
 # Define a few command handlers. These usually take the two arguments bot and
@@ -42,11 +25,12 @@ if len(sys.argv) != 3 and len(sys.argv) != 2:
 def start(update, context):
     """Send a message when the command /start is issued."""
     update.message.reply_text('Hi!')
+    chat_id = open("/tmp/chat_id", "w")
+    chat_id.write(str(update.message.chat.id))
 
 def help(update, context):
     """Send a message when the command /help is issued."""
     update.message.reply_text('Help!')
-
 
 def echo(update, context):
     """Echo the user message."""
@@ -69,7 +53,6 @@ def main():
     # Make sure to set use_context=True to use the new context based callbacks
     # Post version 12 this will no longer be necessary
     updater = Updater(sys.argv[1], use_context=True)
-    # updater = Updater("816337894:AAF5FaxvPAfXt_xz2s6c0lTGaJVBt9Am4gI", use_context=True)
 
     # Get the dispatcher to register handlers
     dp = updater.dispatcher
@@ -91,7 +74,6 @@ def main():
     # SIGTERM or SIGABRT. This should be used most of the time, since
     # start_polling() is non-blocking and will stop the bot gracefully.
     updater.idle()
-
 
 if __name__ == '__main__':
     main()
