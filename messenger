@@ -1,0 +1,117 @@
+#! /usr/bin/gforth
+
+\ prepare randomizer
+require random.fs
+utime d>s seed !
+
+\ the buffer for string operations
+create command_line_buffer 256 chars allot
+
+\ define configuration reader
+\ ---------------------------
+vocabulary config
+config definitions
+: -leading  ( addr len -- addr' len' ) begin over c@ bl = while 1 /string repeat ;
+: trim      ( addr len -- addr len) -leading -trailing ;
+: # ( -- )      1 PARSE 2DROP ; \ comment
+: = ( addr --)  1 PARSE trim ROT PLACE ; \ string assignment
+forth definitions
+
+\ run & read from system/shell commands
+User sh$  cell uallot drop
+: sh-get ( addr u -- addr' u' )
+sh$ free-mem-var
+r/o open-pipe throw dup >r slurp-fid
+r> close-pipe throw to $? 2dup sh$ 2! ;
+
+\ read config file
+\ ----------------
+-1 value dnd_begin
+-1 value dnd_end
+-1 value dnd_enabled
+variable DND_BEGIN_HOUR 5 allot
+variable DND_END_HOUR 5 allot
+variable TELEGRAM_BOT_ID 32 allot
+variable PATH_TO_HOLD_FOLDER 120 allot
+variable DOCKER_SEND_COMMAND 100 allot
+
+: read_config
+s" /etc/messenger.conf" file-status nip dup 0<>
+if ." cannot find configuration at: /etc/messenger.conf - rc: " . cr bye 
+else drop then
+s" /etc/messenger.conf" config included forth
+DND_BEGIN_HOUR number? 0<> if to dnd_begin else 0 to dnd_enabled then
+DND_END_HOUR number? 0<> if to dnd_end else 0 to dnd_enabled then ;
+
+: config_info
+." DND_BEGIN_HOUR=" dnd_begin . cr
+." DND_END_HOUR=" dnd_end . cr
+." TELEGRAM_BOT=" TELEGRAM_BOT_ID count type cr
+." Do-Not-Disturb mode: " dnd_enabled invert if ." enabled" else ." disabled" then cr ;
+
+\ check if docker messenger is running
+: check_telegram_docker ( -- f ) 0 ;
+
+: houroftheday ( -- n )
+utime d>s 3600000000 / dup 24 / 24 * - ;
+
+\ return true if dnd mode disabled or currently not within dnd times
+: time_ok? ( -- f ) 
+dnd_enabled if
+houroftheday dnd_end dnd_begin within
+else true then ;
+
+\ process all files from folder
+: process_hold_messages
+." process hold messages" cr
+s\" for m in " command_line_buffer place
+PATH_TO_HOLD_FOLDER count command_line_buffer +place
+s\" /*.msg; do " command_line_buffer +place
+DOCKER_SEND_COMMAND count command_line_buffer +place
+s\"  \"$( cat \"$m\" )\"; if [ $? -eq 0 ]; then rm \"$m\"; fi; sleep 3; done" command_line_buffer +place
+command_line_buffer count system ;
+
+\ dispatch a message to send with docker container function
+\ $ docker exec telegram-bot python3 send_telegram.py msg
+: docker_dispatch ( msg -- rc )
+over over ." dispatch message: " type cr
+DOCKER_SEND_COMMAND count command_line_buffer place   \ load with docker command
+s\"  \"" command_line_buffer +place              \ add opening quote
+command_line_buffer +place                       \ add message as argument
+s\" \"" command_line_buffer +place               \ add closing quote
+command_line_buffer count type cr
+command_line_buffer count system $? ;
+
+\ add a single character to a string variable
+: append_char { caddr chr -- } caddr dup count dup chars rot + chr swap c! 1 chars + swap c! ;
+
+\ append a number of random chars a..z to a string
+: append_random_chars { caddr num -- }
+num 0 ?do caddr rnd 26 mod 97 + append_char loop ;
+
+: path_to_messagefile { path_var -- }
+PATH_TO_HOLD_FOLDER count path_var place
+path_var 47 append_char                         \ append a slash char
+path_var 12 append_random_chars
+s" .msg" path_var +place ;
+
+: hold_message { msg length -- }
+\ create a filename where to store
+command_line_buffer path_to_messagefile
+command_line_buffer dup count ." hold message in file: " type count cr
+w/o create-file throw
+dup msg length rot
+write-file throw
+close-file throw ;
+
+: main
+read_config config_info
+time_ok? dup if process_hold_messages then
+argc @ 2 = if 1 arg                           \ message argument available
+  \ time ok? then dispatch, otherwise hold
+  rot if
+   docker_dispatch 0 <> abort" Error while dispatching message"
+   else hold_message then
+ then ;
+
+main bye

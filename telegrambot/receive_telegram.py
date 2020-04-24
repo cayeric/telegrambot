@@ -5,6 +5,7 @@ import logging
 import sys
 import os
 import base64
+import random, string
 
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
@@ -14,11 +15,17 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 logger = logging.getLogger(__name__)
 
-if len(sys.argv) != 3 and len(sys.argv) != 2:
-    print("Usage: receive_telegram.py BOT_ID [HOOK_PATH]")
-    print("  if no HOOK_PATH available, incoming mesage gets dispatched to stdout unencoded")
-    print("   otherwise the hook gets calle with the base64-encoded message text")
-    sys.exit(1)
+incoming_messages_folder="/var/telegrambot/messages"
+
+def randomword(length):
+   letters = string.ascii_lowercase
+   return ''.join(random.choice(letters) for i in range(length))
+
+#if len(sys.argv) != 3 and len(sys.argv) != 2:
+#    print("Usage: receive_telegram.py BOT_ID [HOOK_PATH]")
+#    print("  if no HOOK_PATH available, incoming mesage gets dispatched to stdout unencoded")
+#    print("   otherwise the hook gets calle with the base64-encoded message text")
+#    sys.exit(1)
 
 # Define a few command handlers. These usually take the two arguments bot and
 # update. Error handlers also receive the raised TelegramError object in error.
@@ -27,6 +34,7 @@ def start(update, context):
     update.message.reply_text('Hi!')
     chat_id = open("/tmp/chat_id", "w")
     chat_id.write(str(update.message.chat.id))
+    chat_id.close()
 
 def help(update, context):
     """Send a message when the command /help is issued."""
@@ -37,11 +45,18 @@ def echo(update, context):
     # update.message.reply_text(update.message.text)
     chat_id = open("/tmp/chat_id", "w")
     chat_id.write(str(update.message.chat.id))
-    if len(sys.argv) == 2:
-        print(update.message.text)
-    else:
-        text = base64.b64encode(update.message.text.encode()).decode()
-        os.system(sys.argv[2]+" \'"+text+"\'")
+    chat_id.close()
+#    os.environ['TELEGRAM_CHAT_ID']=str(update.message.chat.id)
+#    if len(sys.argv) == 2:
+    msg_name=randomword(12)+".msg"
+    msg_file=open("/"+msg_name, "w")
+    msg_file.write(update.message.text)
+    msg_file.close()
+    os.system("mv /"+msg_name+" "+incoming_messages_folder)
+#        print(update.message.text)
+#    else:
+#        text = base64.b64encode(update.message.text.encode()).decode()
+#        os.system(sys.argv[2]+" \'"+text+"\'")
 
 def error(update, context):
     """Log Errors caused by Updates."""
@@ -51,8 +66,15 @@ def main():
     """Start the bot."""
     # Create the Updater and pass it your bot's token.
     # Make sure to set use_context=True to use the new context based callbacks
-    # Post version 12 this will no longer be necessary
-    updater = Updater(sys.argv[1], use_context=True)
+    if os.environ.get('TELEGRAM_BOT_ID') is None:
+        print("TELEGRAM_BOT_ID environment variable missing - abort")
+        sys.exit(1)
+    updater = Updater(os.environ['TELEGRAM_BOT_ID'], use_context=True)
+
+    if os.environ.get('TELEGRAM_CHAT_ID') is not None:
+        chat_id = open("/tmp/chat_id", "w")
+        chat_id.write(str(os.environ['TELEGRAM_CHAT_ID']))
+        chat_id.close()
 
     # Get the dispatcher to register handlers
     dp = updater.dispatcher
