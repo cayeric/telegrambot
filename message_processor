@@ -1,0 +1,73 @@
+#! /usr/bin/gforth
+\ process incoming messages passed as argument in arg 1
+
+create message 255 chars allot
+
+: ?delimiter ( chr - f )
+case
+bl of true endof
+13 of true endof
+10 of true endof
+drop false exit
+endcase ;
+
+: next-delimiter ( uaddr count -- uaddr' )
+over + dup rot ( addr] uaddr )
+?do i c@ ?delimiter if drop i leave then 1 chars +loop ;
+
+: next-non-delimiter ( uaddr count -- uaddr' )
+over + dup rot ( addr] uaddr )
+?do i c@ ?delimiter invert if drop i leave then 1 chars +loop ;
+
+\ if next-word has zero length: end of string
+: next-word ( uaddr count  -- raddr rcount waddr wcount )
+over over next-non-delimiter ( ua c ua' )
+rot rot + over - ( ua' c' )
+over swap over over next-delimiter ( ua' ua' c' ua'' )
+rot rot +                          ( ua' ua'' ue' )
+over -                             ( ua' ua'' c'' )
+swap dup >r swap rot               ( ua'' c'' ua' | ua'')
+dup r> swap                        ( ua'' c'' ua' ua'' ua' )
+-                                  ( ua'' c'' ua' c' ) ;
+
+: string-compare ( uaddr1 count1 uaddr2 count2 -- f )
+rot over                           ( ua1 ua2 c2 c1 c2 )
+= if                               ( ua1 ua2 c2 )
+ >r true rot rot r>                ( true ua1 ua2 c2 )
+ 0 ?do                             ( true ua1 ua2 )
+  over i + c@ over i + c@          ( true ua1 ua2 ch1 ch2 )
+  <> if                            ( true ua1 ua2 )
+   rot drop false rot rot
+  then
+ loop
+ drop drop
+else                               ( ua1 ua2 c2 )
+ drop drop drop false
+then ;
+
+\ test and execute commands
+: hello-command s\" messenger \"hello\"" system $? 0 = ;
+: ping-command s\" messenger \"pong\"" system $? 0 = ;
+\
+: command_execution { uaddr ccount -- f }
+uaddr ccount ." evaluate [" type ." ]" cr
+uaddr ccount s" ping" string-compare if ping-command exit then
+uaddr ccount s" hello" string-compare if hello-command exit then
+false
+;
+
+: remove-message 1 arg delete-file throw ;
+
+: read-message
+argc @ 2 = if 1 arg
+file-status 0 <> if ." missing file: <" 1 arg type ." > - abort" cr bye then
+1 arg slurp-file message place 
+." received message: " message count type cr then ;
+
+: main
+read-message
+message count next-word command_execution 
+if ." command execution success" cr remove-message then
+;
+
+main bye
