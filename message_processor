@@ -1,6 +1,8 @@
 #! /usr/bin/gforth
 \ process incoming messages passed as argument in arg 1
 
+require string.fs
+
 create message 255 chars allot
 
 : ?delimiter ( chr - f )
@@ -45,14 +47,26 @@ else                               ( ua1 ua2 c2 )
  drop drop drop false
 then ;
 
+User sh$  cell uallot drop
+: sh-get ( addr u -- addr' u' )
+sh$ free-mem-var
+r/o open-pipe throw dup >r slurp-fid
+r> close-pipe throw to $? 2dup sh$ 2! ;
+
 \ test and execute commands
+variable clb \ command line buffer
+
 : hello-command s\" messenger \"hello\"" system $? 0 = ;
 : ping-command s\" messenger \"pong\"" system $? 0 = ;
+: shell-command s\" sh -c \"" clb $! over over clb $+! s\" \"" clb $+! clb 
+$@ type cr clb $@ sh-get clb $off
+s\" messenger \"" clb $! clb $+! s\" \"" clb $+! clb $@ system $? 0= ;
 \
 : command_execution { uaddr ccount -- f }
 uaddr ccount ." evaluate [" type ." ]" cr
 uaddr ccount s" ping" string-compare if ping-command exit then
 uaddr ccount s" hello" string-compare if hello-command exit then
+uaddr ccount s" shell" string-compare if shell-command exit then
 false
 ;
 

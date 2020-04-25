@@ -9,7 +9,7 @@ How to create a bot
 4. To send a telegram, call *send_telegram.py* with the **message text** as argument. This is only possible if at least one telegram was previously received (and the chat_id recorded from this message).
 
 docker command to create a telegram bot that receives and dispatches messages:
-docker create --name tele -v /var/messenger/in:/var/telegrambot/messages -e TELEGRAM_BOT_ID="" -e TELEGRAM_CHAT_ID="" telegrambot
+docker create --name tele --restart unless-stopped -v /var/messenger/in:/var/telegrambot/messages -e TELEGRAM_BOT_ID="" -e TELEGRAM_CHAT_ID="" telegrambot
 
 dependencies
 ============
@@ -27,13 +27,20 @@ messenger script
 ================
 * the messenger script can be used as entry point to dispatch messages to the system. it provides a do-not-disturb mode and caches messages for dispatching at a later point in time. the messenger runs as a forth script on **gforth**. to make it available move the script into */usr/local/bin*
 * the messenger script expects and reads a messenger config file at */etc/messenger.conf*
+* to make sure, that messages are processed even when not invoked manually, call messenger without args per crontab once a day
+	$ crontab -e
+	* 9 * * * /usr/local/bin/messenger
 
 message_processor script
 ========================
-* incron monitors the incoming folder and invokes the processor script with the incoming file:
+* incron monitors the incoming folder and invokes the processor script:
 
-	$ incrontab -e
-	
+	# if root is not allowed, add root to the incron user list:
+	$ sudo echo "root" >> /etc/incron.allow
+
+	# edit the incrontab to add the message monitor:
+	$ sudo incrontab -e
+
 	# add line:
 	/var/messenger/in IN_CLOSE_WRITE /usr/local/bin/message_processor $@/$#
 

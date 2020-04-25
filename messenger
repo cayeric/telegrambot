@@ -1,11 +1,14 @@
 #! /usr/bin/gforth
 
+require string.fs
+
 \ prepare randomizer
 require random.fs
 utime d>s seed !
 
 \ the buffer for string operations
 create command_line_buffer 256 chars allot
+variable clb
 
 \ define configuration reader
 \ ---------------------------
@@ -64,41 +67,41 @@ else true then ;
 \ process all files from folder
 : process_hold_messages
 ." process hold messages" cr
-s\" for m in " command_line_buffer place
-PATH_TO_HOLD_FOLDER count command_line_buffer +place
-s\" /*.msg; do " command_line_buffer +place
-DOCKER_SEND_COMMAND count command_line_buffer +place
-s\"  \"$( cat \"$m\" )\"; if [ $? -eq 0 ]; then rm \"$m\"; fi; sleep 3; done" command_line_buffer +place
-command_line_buffer count system ;
+s\" for m in " clb $!
+PATH_TO_HOLD_FOLDER count clb $+!
+s\" /*.msg; do if [ ! -f \"$m\" ]; then continue; fi; " clb $+!
+DOCKER_SEND_COMMAND count clb $+!
+s\"  \"$( cat \"$m\" )\"; if [ $? -eq 0 ]; then rm \"$m\"; fi; sleep 3; done" clb $+!
+clb $@ system clb $off ;
 
 \ dispatch a message to send with docker container function
 \ $ docker exec telegram-bot python3 send_telegram.py msg
 : docker_dispatch ( msg -- rc )
 over over ." dispatch message: " type cr
-DOCKER_SEND_COMMAND count command_line_buffer place   \ load with docker command
-s\"  \"" command_line_buffer +place              \ add opening quote
-command_line_buffer +place                       \ add message as argument
-s\" \"" command_line_buffer +place               \ add closing quote
-command_line_buffer count type cr
-command_line_buffer count system $? ;
+DOCKER_SEND_COMMAND count clb $!                 \ load with docker command
+s\"  \"" clb $+!                                 \ add opening quote
+clb $+!                                          \ add message as argument
+s\" \"" clb $+!                                  \ add closing quote
+clb $@ type cr
+clb $@ system clb $off $? ;
 
 \ add a single character to a string variable
-: append_char { caddr chr -- } caddr dup count dup chars rot + chr swap c! 1 chars + swap c! ;
+\ : append_char { caddr chr -- } caddr dup count dup chars rot + chr swap c! 1 chars + swap c! ;
 
 \ append a number of random chars a..z to a string
-: append_random_chars { caddr num -- }
-num 0 ?do caddr rnd 26 mod 97 + append_char loop ;
+: append_random_chars { string num -- }
+num 0 ?do rnd 26 mod 97 + pad c! pad 1 string $+! loop ;
 
-: path_to_messagefile { path_var -- }
-PATH_TO_HOLD_FOLDER count path_var place
-path_var 47 append_char                         \ append a slash char
-path_var 12 append_random_chars
-s" .msg" path_var +place ;
+: path_to_messagefile { path_string -- }
+PATH_TO_HOLD_FOLDER path_string $!
+s" /" path_string $+!                           \ append a slash char
+path_string 12 append_random_chars
+s" .msg" path_string $+! ;
 
 : hold_message { msg length -- }
 \ create a filename where to store
-command_line_buffer path_to_messagefile
-command_line_buffer dup count ." hold message in file: " type count cr
+clb path_to_messagefile
+clb dup $@ ." hold message in file: " type cr
 w/o create-file throw
 dup msg length rot
 write-file throw
