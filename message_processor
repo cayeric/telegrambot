@@ -2,8 +2,11 @@
 \ process incoming messages passed as argument in arg 1
 
 require string.fs
+require random.fs
 
-create message 255 chars allot
+variable message 		\ receives message from file
+variable clb 			\ command line buffer
+variable string			\ multi-purpose string
 
 : ?delimiter ( chr - f )
 case
@@ -12,6 +15,39 @@ bl of true endof
 10 of true endof
 drop false exit
 endcase ;
+
+User sh$  cell uallot drop
+: sh-get ( addr u -- addr' u' )
+sh$ free-mem-var
+r/o open-pipe throw dup >r slurp-fid
+r> close-pipe throw to $? 2dup sh$ 2! ;
+
+\ ---------------------------
+\ define configuration reader
+\ ---------------------------
+vocabulary config
+config definitions
+: -leading  ( addr len -- addr' len' ) begin over c@ bl = while 1 /string repeat ;
+: trim      ( addr len -- addr len) -leading -trailing ;
+: # ( -- )      1 PARSE 2DROP ; \ comment
+: = ( addr --)  1 PARSE trim ROT PLACE ; \ string assignment
+forth definitions
+\ read config file
+\ ----------------
+variable DND_BEGIN_HOUR 5 allot
+variable DND_END_HOUR 5 allot
+variable TELEGRAM_BOT_ID 32 allot
+variable MESSENGER_FOLDER 120 allot
+variable DOCKER_SEND_COMMAND 100 allot
+: read_config
+s" /etc/messenger.conf" file-status nip dup 0<>
+if ." cannot find configuration at: /etc/messenger.conf - rc: " . cr bye
+else drop then
+s" /etc/messenger.conf" config included forth ;
+\ ------------------
+
+\ prepare randomizer
+utime d>s seed !
 
 : next-delimiter ( uaddr count -- uaddr' )
 over + dup rot ( addr] uaddr )
@@ -47,21 +83,43 @@ else                               ( ua1 ua2 c2 )
  drop drop drop false
 then ;
 
-User sh$  cell uallot drop
-: sh-get ( addr u -- addr' u' )
-sh$ free-mem-var
-r/o open-pipe throw dup >r slurp-fid
-r> close-pipe throw to $? 2dup sh$ 2! ;
+: append_random_chars { string num -- }
+num 0 ?do rnd 26 mod 97 + pad c! pad 1 string $+! loop ;
+
+: path_to_outmessagefile { path_string -- }
+MESSENGER_FOLDER count path_string $!
+s" /out/" path_string $+!                           \ append a slash char
+path_string 12 append_random_chars
+s" .msg" path_string $+! ;
+
+: remove-message delete-file throw ;
+
+: write-message { msg length path }
+path $@ w/o create-file throw     \ file_id
+dup msg length rot write-file throw               \ file_id
+close-file throw ;
+
+: read-message ( string -- )
+argc @ 2 = if 
+ .s cr
+ 1 arg file-status 0 <> if 
+  ." missing file: <" 1 arg type ." > - abort" cr bye then
+ drop 1 arg slurp-file rot .s cr $!
+ ." received message: " message $@ type cr then ;
 
 \ test and execute commands
-variable clb \ command line buffer
-
 : hello-command s\" messenger \"hello\"" system $? 0 = ;
 : ping-command s\" messenger \"pong\"" system $? 0 = ;
-: shell-command s\" sh -c \"" clb $! over over clb $+! s\" \"" clb $+! clb 
-$@ type cr clb $@ sh-get clb $off
-s\" messenger \"" clb $! clb $+! s\" \"" clb $+! clb $@ system $? 0= ;
-\
+
+: shell-command 
+clb $! clb 
+$@ type cr clb $@ sh-get clb $off over over ." yield: " type
+\ store in file
+string path_to_outmessagefile string write-message
+s\" messenger -f " clb $! string $@ clb $+! clb $@ system 
+string $@ remove-message 
+string $off clb $off $? 0= ;
+
 : command_execution { uaddr ccount -- f }
 uaddr ccount ." evaluate [" type ." ]" cr
 uaddr ccount s" ping" string-compare if ping-command exit then
@@ -70,18 +128,12 @@ uaddr ccount s" shell" string-compare if shell-command exit then
 false
 ;
 
-: remove-message 1 arg delete-file throw ;
-
-: read-message
-argc @ 2 = if 1 arg
-file-status 0 <> if ." missing file: <" 1 arg type ." > - abort" cr bye then
-1 arg slurp-file message place 
-." received message: " message count type cr then ;
-
 : main
-read-message
-message count next-word command_execution 
-if ." command execution success" cr remove-message then
+argc @ 2 <> if ." Usage: message_processor PATH_TO_MSGFILE" cr bye then
+read_config
+message read-message
+message $@ next-word command_execution message $off
+if ." command execution success" cr 1 arg remove-message then
 ;
 
 main bye

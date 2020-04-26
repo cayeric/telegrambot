@@ -35,7 +35,7 @@ r> close-pipe throw to $? 2dup sh$ 2! ;
 variable DND_BEGIN_HOUR 5 allot
 variable DND_END_HOUR 5 allot
 variable TELEGRAM_BOT_ID 32 allot
-variable PATH_TO_HOLD_FOLDER 120 allot
+variable MESSENGER_FOLDER 120 allot
 variable DOCKER_SEND_COMMAND 100 allot
 
 : read_config
@@ -58,6 +58,21 @@ DND_END_HOUR number? 0<> if to dnd_end else 0 to dnd_enabled then ;
 : houroftheday ( -- n )
 utime d>s 3600000000 / dup 24 / 24 * - ;
 
+: string-compare ( uaddr1 count1 uaddr2 count2 -- f )
+rot over                           ( ua1 ua2 c2 c1 c2 )
+= if                               ( ua1 ua2 c2 )
+ >r true rot rot r>                ( true ua1 ua2 c2 )
+ 0 ?do                             ( true ua1 ua2 )
+  over i + c@ over i + c@          ( true ua1 ua2 ch1 ch2 )
+  <> if                            ( true ua1 ua2 )
+   rot drop false rot rot
+  then
+ loop
+ drop drop
+else                               ( ua1 ua2 c2 )
+ drop drop drop false
+then ;
+
 \ return true if dnd mode disabled or currently not within dnd times
 : time_ok? ( -- f ) 
 dnd_enabled if
@@ -68,10 +83,10 @@ else true then ;
 : process_hold_messages
 ." process hold messages" cr
 s\" for m in " clb $!
-PATH_TO_HOLD_FOLDER count clb $+!
-s\" /*.msg; do if [ ! -f \"$m\" ]; then continue; fi; " clb $+!
+MESSENGER_FOLDER count clb $+!
+s\" /hold/*.msg; do if [ ! -f \"$m\" ]; then continue; fi; " clb $+!
 DOCKER_SEND_COMMAND count clb $+!
-s\"  \"$( cat \"$m\" )\"; if [ $? -eq 0 ]; then rm \"$m\"; fi; sleep 3; done" clb $+!
+s\"  -f \"$m\"; if [ $? -eq 0 ]; then rm \"$m\"; fi; sleep 3; done" clb $+!
 clb $@ system clb $off ;
 
 \ dispatch a message to send with docker container function
@@ -79,10 +94,17 @@ clb $@ system clb $off ;
 : docker_dispatch ( msg -- rc )
 over over ." dispatch message: " type cr
 DOCKER_SEND_COMMAND count clb $!                 \ load with docker command
-s\"  \"" clb $+!                                 \ add opening quote
+s\"  -t \"" clb $+!                              \ add text argument switch and opening quote
 clb $+!                                          \ add message as argument
 s\" \"" clb $+!                                  \ add closing quote
 clb $@ type cr
+clb $@ system clb $off $? ;
+
+: docker_filemessage_dispatch ( filepath ccount -- rc )
+DOCKER_SEND_COMMAND count clb $!                 \ load with docker command
+s"  -f " clb $+!                                 \ add switch
+clb $+!                                          \ add message as argument
+." dispatch using command: " clb $@ type cr
 clb $@ system clb $off $? ;
 
 \ add a single character to a string variable
@@ -92,20 +114,38 @@ clb $@ system clb $off $? ;
 : append_random_chars { string num -- }
 num 0 ?do rnd 26 mod 97 + pad c! pad 1 string $+! loop ;
 
-: path_to_messagefile { path_string -- }
-PATH_TO_HOLD_FOLDER path_string $!
-s" /" path_string $+!                           \ append a slash char
+: path_to_outmessagefile { path_string -- }
+MESSENGER_FOLDER path_string $!
+s" /out/" path_string $+!                           \ append a slash char
+path_string 12 append_random_chars
+s" .msg" path_string $+! ;
+
+: path_to_holdmessagefile { path_string -- }
+MESSENGER_FOLDER count path_string $!
+s" /hold/" path_string $+!                           \ append a slash char
 path_string 12 append_random_chars
 s" .msg" path_string $+! ;
 
 : hold_message { msg length -- }
 \ create a filename where to store
-clb path_to_messagefile
+clb path_to_holdmessagefile
 clb dup $@ ." hold message in file: " type cr
 w/o create-file throw
 dup msg length rot
 write-file throw
 close-file throw ;
+
+: copy-files ( src_path src_count -- )
+slurp-file clb path_to_holdmessagefile
+clb $@ w/o create-file throw    \ ( srcd srcc fid )
+clb $off dup >r rot rot r>                            \ ( fid srcd srcc fid )
+write-file throw close-file throw
+;
+
+: hold_message_file ( srcpath ccount -- )
+clb path_to_holdmessagefile clb $@ 
+s" move file to: " type clb $@ type cr
+rename-file throw ;
 
 : main
 read_config config_info
@@ -115,6 +155,15 @@ argc @ 2 = if 1 arg                           \ message argument available
   rot if
    docker_dispatch 0 <> abort" Error while dispatching message"
    else hold_message then
- then ;
+ then 
+argc @ 3 = if 
+ 1 arg s" -f" string-compare if
+  time_ok? if
+   2 arg docker_filemessage_dispatch 0 <> abort" Error while dispatching message from file"
+   2 arg delete-file throw
+   else 2 arg hold_message_file then
+  then
+ then
+;
 
 main bye

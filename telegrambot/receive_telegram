@@ -15,7 +15,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 logger = logging.getLogger(__name__)
 
-incoming_messages_folder="/var/telegrambot/messages"
+incoming_messages_folder=os.environ["MESSENGER_FOLDER"]+"/in"
 
 def randomword(length):
    letters = string.ascii_lowercase

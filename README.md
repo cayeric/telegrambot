@@ -9,7 +9,7 @@ How to create a bot
 4. To send a telegram, call *send_telegram.py* with the **message text** as argument. This is only possible if at least one telegram was previously received (and the chat_id recorded from this message).
 
 docker command to create a telegram bot that receives and dispatches messages:
-docker create --name tele --restart unless-stopped -v /var/messenger/in:/var/telegrambot/messages -e TELEGRAM_BOT_ID="" -e TELEGRAM_CHAT_ID="" telegrambot
+docker create --name tele --restart unless-stopped -v /var/messenger:/var/messenger -e TELEGRAM_BOT_ID="" -e TELEGRAM_CHAT_ID="" -e MESSENGER_FOLDER="/var/messenger" telegrambot
 
 dependencies
 ============
